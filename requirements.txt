@@ -1,0 +1,56 @@
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# Streamlit UI
+streamlit==1.35.0
+plotly==5.22.0
+
+# LangChain + RAG
+langchain==0.2.3
+langchain-community==0.2.3
+langchain-anthropic==0.1.15
+langchain-huggingface==0.0.3
+
+# Vector stores
+chromadb==0.5.0
+faiss-cpu==1.8.0
+
+# Embeddings
+sentence-transformers==3.0.0
+
+# LLM providers
+anthropic==0.28.0
+ollama==0.2.1
+
+# Database
+supabase==2.4.6
+
+# Memory / Redis
+redis==5.0.4
+upstash-redis==1.1.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Reranker
+FlagEmbedding==1.2.10
+
+# HTTP client (for Streamlit ↔ API)
+httpx==0.27.0
+
+# Validation
+pydantic==2.7.1
+pydantic-settings==2.3.0
+
+# Utilities
+python-dotenv==1.0.1
+loguru==0.7.2
+tenacity==8.3.0
+
+# Dev / test
+pytest==8.2.2
+pytest-asyncio==0.23.7
+httpx==0.27.0
