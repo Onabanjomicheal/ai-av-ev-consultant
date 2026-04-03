@@ -1,7 +1,7 @@
 """
 LLM abstraction layer.
-Supports: Ollama (local, free) and Claude API.
-Switch via LLM_PROVIDER env var: "ollama" | "claude"
+Supports: Ollama (local, free), Claude API, and Groq.
+Switch via LLM_PROVIDER env var: "ollama" | "claude" | "groq"
 """
 from __future__ import annotations
 from functools import lru_cache
@@ -13,6 +13,7 @@ class LLMSettings(BaseSettings):
     llm_model: str = "mistral"
     ollama_base_url: str = "http://localhost:11434"
     anthropic_api_key: str = ""
+    groq_api_key: str = ""
 
     class Config:
         env_file = ".env"
@@ -27,6 +28,14 @@ def get_llm():
         return ChatAnthropic(
             model="claude-3-haiku-20240307",
             anthropic_api_key=s.anthropic_api_key,
+            temperature=0.2,
+            max_tokens=2048,
+        )
+    elif s.llm_provider == "groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            model=s.llm_model,
+            groq_api_key=s.groq_api_key,
             temperature=0.2,
             max_tokens=2048,
         )

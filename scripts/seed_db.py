@@ -25,8 +25,15 @@ def main():
     if db is None:
         print("Supabase not configured. Set SUPABASE_URL and SUPABASE_KEY in .env")
         return
-    db.rpc("query", {"query": SQL}).execute()
-    print("Database seeded.")
+    try:
+        db.rpc("query", {"query": SQL}).execute()
+        print("Database seeded.")
+    except Exception as e:
+        msg = str(e)
+        print("Could not execute SQL via RPC (query function not found).")
+        print("Run this SQL in Supabase SQL Editor instead:\n")
+        print(SQL.strip())
+        print("\nError:", msg)
 
 
 if __name__ == "__main__":

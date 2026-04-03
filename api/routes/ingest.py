@@ -7,10 +7,10 @@ from langchain_community.document_loaders import (
     CSVLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from api.schemas.documents import IngestRequest, IngestResponse
+from api.services.rag import RAGSettings
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -59,11 +59,19 @@ async def ingest_documents(req: IngestRequest):
     chunks = splitter.split_documents(docs)
 
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    Chroma.from_documents(
-        chunks,
-        embeddings,
-        persist_directory="./data/vectorstore",
-    )
+    settings = RAGSettings()
+    if settings.vectorstore_type.lower() == "faiss":
+        from langchain_community.vectorstores import FAISS
+        vs = FAISS.from_documents(chunks, embeddings)
+        vs.save_local(settings.faiss_persist_dir)
+    else:
+        from langchain_community.vectorstores import Chroma
+        Chroma.from_documents(
+            chunks,
+            embeddings,
+            collection_name="langchain",
+            persist_directory=settings.chroma_persist_dir,
+        )
 
     return IngestResponse(
         status="success",

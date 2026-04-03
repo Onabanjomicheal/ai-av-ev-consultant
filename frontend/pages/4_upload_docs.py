@@ -4,11 +4,24 @@ Document upload and ingestion trigger page.
 import os
 import httpx
 import streamlit as st
+from frontend.components.styles import inject_global_styles
 
 st.title("Upload AV/EV Documents")
 st.markdown("Upload PDFs or HTML files to expand the knowledge base.")
+inject_global_styles()
+st.markdown(
+    """
+    <div class="card">
+        <strong>Keep the knowledge base current with your latest reports.</strong>
+        <div class="tag">Ingestion</div>
+        <div class="tag">RAG Index</div>
+        <div class="tag">Sources</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-API_URL = st.secrets.get("API_BASE_URL", "http://localhost:8000")
+API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
 category = st.selectbox("Document category", ["av", "ev"])
 uploaded = st.file_uploader("Choose files", type=["pdf", "html", "csv"], accept_multiple_files=True)

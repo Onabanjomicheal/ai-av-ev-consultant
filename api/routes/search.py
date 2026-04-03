@@ -9,11 +9,17 @@ async def search_documents(
     q: str = Query(..., min_length=1),
     k: int = Query(default=5, ge=1, le=20),
 ):
-    """
-    Direct semantic search over the document store.
-    Returns ranked chunks with sources — useful for the policy search page.
-    """
     from api.services.rag import RAGSettings
-    settings = RAGSettings(retrieval_k=k, rerank_top_n=k)
+    settings = RAGSettings(retrieval_k=k*2, rerank_top_n=k)
     chunks = retrieve(q, settings)
-    return {"query": q, "results": chunks}
+
+    # Deduplicate by content
+    seen = set()
+    unique = []
+    for chunk in chunks:
+        key = chunk["content"][:100]
+        if key not in seen:
+            seen.add(key)
+            unique.append(chunk)
+
+    return {"query": q, "results": unique[:k]}

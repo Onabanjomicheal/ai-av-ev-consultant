@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 class RAGSettings(BaseSettings):
     vectorstore_type: str = "chroma"
     chroma_persist_dir: str = "./data/vectorstore"
-    retrieval_k: int = 8        # chunks fetched from vector store
-    rerank_top_n: int = 4       # chunks kept after reranking
+    faiss_persist_dir: str = "./data/vectorstore_faiss"
+    retrieval_k: int = 8
+    rerank_top_n: int = 4
 
     class Config:
         env_file = ".env"
@@ -31,21 +32,24 @@ class RAGSettings(BaseSettings):
 # ── Vector store loader ────────────────────────────────────────────
 
 def _load_vectorstore(settings: RAGSettings):
-    if settings.vectorstore_type == "chroma":
-        from langchain_community.vectorstores import Chroma
-        from langchain_huggingface import HuggingFaceEmbeddings
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        return Chroma(
-            persist_directory=settings.chroma_persist_dir,
-            embedding_function=embeddings,
-        )
-    else:
-        import faiss
+    from langchain_huggingface import HuggingFaceEmbeddings
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+    if settings.vectorstore_type.lower() == "faiss":
         from langchain_community.vectorstores import FAISS
-        from langchain_huggingface import HuggingFaceEmbeddings
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        index_path = Path(settings.chroma_persist_dir) / "faiss_index"
-        return FAISS.load_local(str(index_path), embeddings)
+        # FAISS index must already be built and saved locally
+        return FAISS.load_local(
+            settings.faiss_persist_dir,
+            embeddings,
+            allow_dangerous_deserialization=True,
+        )
+
+    from langchain_community.vectorstores import Chroma
+    return Chroma(
+        collection_name="langchain",
+        persist_directory=settings.chroma_persist_dir,
+        embedding_function=embeddings,
+    )
 
 
 # ── Retrieval ──────────────────────────────────────────────────────
@@ -67,7 +71,6 @@ def retrieve(question: str, settings: RAGSettings | None = None) -> list[dict]:
         logger.warning(f"Vector store not ready: {e}")
         return []
 
-    # Category-based filter (optional metadata filter for Chroma)
     search_kwargs: dict = {"k": settings.retrieval_k}
     if category != QueryCategory.GENERAL:
         search_kwargs["filter"] = {"category": category.value}
@@ -75,7 +78,9 @@ def retrieve(question: str, settings: RAGSettings | None = None) -> list[dict]:
     try:
         docs = vs.similarity_search(question, **search_kwargs)
     except Exception:
-        # Retry without category filter if no results
+        docs = []
+
+    if not docs:
         docs = vs.similarity_search(question, k=settings.retrieval_k)
 
     chunks = [
@@ -95,6 +100,7 @@ async def rag_stream(
     question: str,
     history: list[dict],
     settings: RAGSettings | None = None,
+    data_summary: str = "",
 ):
     """
     Async generator yielding LLM response tokens.
@@ -102,11 +108,14 @@ async def rag_stream(
     """
     from api.services.llm import stream_response
 
-    chunks = retrieve(question, settings)
-    messages = build_messages(question, chunks, history)
-
-    sources = list({c["source"] for c in chunks})
-    yield f"__SOURCES__:{','.join(sources)}\n"  # metadata line
+    if data_summary:
+        messages = build_messages(question, [], history, data_summary=data_summary)
+        yield "__SOURCES__:\n"
+    else:
+        chunks = retrieve(question, settings)
+        messages = build_messages(question, chunks, history)
+        sources = list({c["source"] for c in chunks})
+        yield f"__SOURCES__:{','.join(sources)}\n"
 
     async for token in stream_response(messages):
         yield token

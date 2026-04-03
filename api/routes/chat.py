@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from api.schemas.chat import ChatRequest, ClearSessionRequest
 from api.services import memory, rag
+from api.services.database import log_query
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -20,17 +21,25 @@ async def chat_stream(req: ChatRequest):
     async def generate():
         full_answer = []
         sources = []
-        async for token in rag.rag_stream(req.question, history):
-            if token.startswith("__SOURCES__:"):
-                sources = token.replace("__SOURCES__:", "").strip().split(",")
-                yield token
-            else:
-                full_answer.append(token)
-                yield token
+        try:
+            async for token in rag.rag_stream(
+                req.question,
+                history,
+                data_summary=req.data_summary,
+            ):
+                if token.startswith("__SOURCES__:"):
+                    sources = token.replace("__SOURCES__:", "").strip().split(",")
+                    yield token
+                else:
+                    full_answer.append(token)
+                    yield token
+        except Exception as e:
+            yield f"Error: {e}"
 
         answer_text = "".join(full_answer)
         memory.append_turn(req.session_id, "user", req.question)
         memory.append_turn(req.session_id, "assistant", answer_text)
+        log_query(req.session_id, req.question, answer_text, sources)
 
     return StreamingResponse(generate(), media_type="text/plain")
 
