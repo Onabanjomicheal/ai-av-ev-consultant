@@ -7,11 +7,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 import uuid
 import re
-import httpx
 import streamlit as st
 import plotly.express as px
 from core.data_analyst import run_data_query
 from frontend.components.styles import inject_global_styles
+from frontend.components.api_client import warmup, stream_with_retry, request_with_retry
 
 st.title("AV/EV Consultant")
 inject_global_styles()
@@ -28,6 +28,7 @@ st.markdown(
 )
 
 API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+warmup(API_URL)
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -100,32 +101,31 @@ if prompt := st.chat_input("Ask about AV/EV technology, policy, regulations, or 
         sources     = []
 
         try:
-            with httpx.Client(timeout=180) as client:
-                with client.stream(
-                    "POST",
-                    f"{API_URL}/chat/stream",
-                    json={
-                        "question": prompt,
-                        "session_id": st.session_state.session_id,
-                        "data_summary": summary if data_result else "",
-                    },
-                ) as resp:
-                    for line in resp.iter_lines():
-                        if line.startswith("__SOURCES__:"):
-                            sources = [
-                                s for s in line.replace("__SOURCES__:", "").split(",")
-                                if s.strip()
-                            ]
-                        else:
-                            full_text += line
-                            full_text = (
-                                full_text
-                                .replace("###", "\n### ")
-                                .replace("##", "\n## ")
-                                .replace("#", "\n# ")
-                            )
-                            full_text = re.sub(r'([a-z])([A-Z][a-z])', r'\1\n\2', full_text)
-                            placeholder.markdown(full_text + "▌")
+            with stream_with_retry(
+                "POST",
+                f"{API_URL}/chat/stream",
+                json={
+                    "question": prompt,
+                    "session_id": st.session_state.session_id,
+                    "data_summary": summary if data_result else "",
+                },
+            ) as resp:
+                for line in resp.iter_lines():
+                    if line.startswith("__SOURCES__:"):
+                        sources = [
+                            s for s in line.replace("__SOURCES__:", "").split(",")
+                            if s.strip()
+                        ]
+                    else:
+                        full_text += line
+                        full_text = (
+                            full_text
+                            .replace("###", "\n### ")
+                            .replace("##", "\n## ")
+                            .replace("#", "\n# ")
+                        )
+                        full_text = re.sub(r'([a-z])([A-Z][a-z])', r'\1\n\2', full_text)
+                        placeholder.markdown(full_text + "▌")
 
             placeholder.markdown(full_text)
 
@@ -165,7 +165,8 @@ with st.sidebar:
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
         try:
-            httpx.post(
+            request_with_retry(
+                "POST",
                 f"{API_URL}/chat/clear",
                 json={"session_id": st.session_state.session_id},
             )

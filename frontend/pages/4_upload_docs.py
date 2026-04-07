@@ -2,9 +2,9 @@
 Document upload and ingestion trigger page.
 """
 import os
-import httpx
 import streamlit as st
 from frontend.components.styles import inject_global_styles
+from frontend.components.api_client import warmup, request_with_retry
 
 st.title("Upload AV/EV Documents")
 st.markdown("Upload PDFs or HTML files to expand the knowledge base.")
@@ -22,6 +22,7 @@ st.markdown(
 )
 
 API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+warmup(API_URL)
 
 category = st.selectbox("Document category", ["av", "ev"])
 uploaded = st.file_uploader("Choose files", type=["pdf", "html", "csv"], accept_multiple_files=True)
@@ -37,10 +38,10 @@ if uploaded and st.button("Upload and ingest"):
 
     with st.spinner("Ingesting documents into vector store..."):
         try:
-            resp = httpx.post(
+            resp = request_with_retry(
+                "POST",
                 f"{API_URL}/ingest",
                 json={"directory": save_dir},
-                timeout=300,
             )
             data = resp.json()
             st.success(
