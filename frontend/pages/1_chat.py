@@ -100,7 +100,7 @@ if prompt := st.chat_input("Ask about AV/EV technology, policy, regulations, or 
         sources     = []
 
         try:
-            with httpx.Client(timeout=180) as client:
+            with httpx.Client(timeout=300) as client:
                 with client.stream(
                     "POST",
                     f"{API_URL}/chat/stream",

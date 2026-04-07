@@ -33,7 +33,7 @@ k = st.slider("Number of results", min_value=1, max_value=10, value=5)
 if st.button("Search") and query:
     with st.spinner("Searching..."):
         try:
-            resp = httpx.get(f"{API_URL}/search", params={"q": query, "k": k}, timeout=30)
+            resp = httpx.get(f"{API_URL}/search", params={"q": query, "k": k}, timeout=120)
             results = resp.json().get("results", [])
             if not results:
                 st.info("No results found. Make sure documents are ingested.")

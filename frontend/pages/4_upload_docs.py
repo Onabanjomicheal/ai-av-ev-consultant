@@ -40,7 +40,7 @@ if uploaded and st.button("Upload and ingest"):
             resp = httpx.post(
                 f"{API_URL}/ingest",
                 json={"directory": save_dir},
-                timeout=300,
+                timeout=600,
             )
             data = resp.json()
             st.success(
