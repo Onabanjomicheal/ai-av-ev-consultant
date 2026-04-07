@@ -28,6 +28,10 @@ def build_messages(
     if data_summary:
         system_content = (
             f"{SYSTEM_PROMPT}\n\n"
+            f"ANSWER STYLE:\n"
+            f"- Use ONLY the DATA FINDINGS below.\n"
+            f"- Do not add any facts not present in the data summary.\n"
+            f"- If a required detail is missing, say: \"Not specified in the provided source documents.\"\n"
             f"---\nDATA FINDINGS (use ONLY this to answer, do not guess):\n"
             f"{data_summary}\n---\n"
             f"Interpret this data as a consultant. Give insights and recommendations "
@@ -45,6 +49,7 @@ def build_messages(
     context_block = _format_context(context_chunks)
 
     mode_note = _mode_instructions(question)
+    feature_note = _feature_instructions(question)
     spec_table = ""
     if _is_spec_mode(question):
         spec_table = build_spec_table(question, context_chunks)
@@ -52,6 +57,7 @@ def build_messages(
     system_content = (
         f"{SYSTEM_PROMPT}\n\n"
         f"{mode_note}\n"
+        f"{feature_note}\n"
         f"---\nRELEVANT DOCUMENT CONTEXT:\n{context_block}\n---"
     )
     if spec_table:
@@ -98,6 +104,32 @@ def _mode_instructions(question: str) -> str:
     if not notes:
         return ""
     return "MODE NOTES:\n" + "\n".join(notes)
+
+
+def _feature_instructions(question: str) -> str:
+    """
+    Feature-specific answer rules layered on top of the system prompt.
+    """
+    q = question.lower()
+    notes = [
+        "ANSWER STYLE (STRICT):",
+        "- Use only the retrieved context below.",
+        "- Every factual claim MUST be accompanied by a short direct quote and the source filename.",
+        "- If you cannot attach a direct quote to a claim, do NOT state the claim; instead write:",
+        "  \"Not specified in the provided source documents.\"",
+        "- Do not infer or paraphrase beyond quoted text.",
+        "- When unsure, respond only with the required missing-info sentence.",
+        "",
+        "FORMAT RULE:",
+        "- Use bullet points for claims.",
+        "- Each bullet must end with: [\"<quote>\" — <source_filename>]",
+    ]
+
+    # If the user explicitly asks for a search-like result, be extractive.
+    if any(k in q for k in ["search", "find", "locate", "quote", "exact text"]):
+        notes.append("- Prefer exact quotes over paraphrase.")
+
+    return "\n".join(notes)
 
 
 def _is_spec_mode(question: str) -> bool:

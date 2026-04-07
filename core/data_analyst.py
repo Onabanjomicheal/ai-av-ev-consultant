@@ -70,6 +70,15 @@ _INTENT_KEYWORDS = {
     ],
 }
 
+_EV_HINTS = [
+    "ev", "electric vehicle", "bev", "phev", "sales", "stock", "charging",
+    "charger", "infrastructure", "market", "adoption",
+]
+_AV_HINTS = [
+    "av", "autonomous", "ads", "adas", "incident", "crash", "collision",
+    "nhtsa", "sgo", "automation",
+]
+
 
 def classify_data_intent(question: str) -> DataIntent:
     q = question.lower()
@@ -77,7 +86,28 @@ def classify_data_intent(question: str) -> DataIntent:
     for intent, keywords in _INTENT_KEYWORDS.items():
         scores[intent] = sum(1 for kw in keywords if kw in q)
     best = max(scores, key=scores.get)
-    return best if scores[best] > 0 else DataIntent.NONE
+    if scores[best] == 0:
+        return DataIntent.NONE
+
+    # Require domain hints so generic phrases like "top risks" don't trigger EV charts.
+    if best in {
+        DataIntent.EV_SALES_RANKING,
+        DataIntent.EV_SALES_TREND,
+        DataIntent.EV_STOCK,
+        DataIntent.EV_CHARGING,
+        DataIntent.BEV_PHEV_COMPARE,
+    }:
+        return best if any(h in q for h in _EV_HINTS) else DataIntent.NONE
+
+    if best in {
+        DataIntent.AV_INCIDENTS,
+        DataIntent.AV_SEVERITY,
+        DataIntent.AV_WEATHER,
+        DataIntent.AV_TREND,
+    }:
+        return best if any(h in q for h in _AV_HINTS) else DataIntent.NONE
+
+    return best
 
 
 # ── Data loaders ───────────────────────────────────────────────────

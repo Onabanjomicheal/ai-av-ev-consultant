@@ -9,10 +9,19 @@ Falls back gracefully if FlagEmbedding is unavailable.
 """
 from __future__ import annotations
 import logging
+from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
 _reranker = None
+
+
+class RerankSettings(BaseSettings):
+    rerank_enabled: bool = True
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
 
 
 def _load_reranker():
@@ -46,6 +55,8 @@ def rerank(question: str, chunks: list[dict], top_n: int = 4) -> list[dict]:
     """
     if not chunks:
         return chunks
+    if not RerankSettings().rerank_enabled:
+        return chunks[:top_n]
 
     reranker = _load_reranker()
     if reranker is None:

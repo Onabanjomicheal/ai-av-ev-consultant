@@ -4,7 +4,6 @@ Model loads once on first call; reused for all subsequent requests.
 """
 from __future__ import annotations
 from functools import lru_cache
-from sentence_transformers import SentenceTransformer
 from pydantic_settings import BaseSettings
 
 
@@ -18,13 +17,18 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_embedder() -> SentenceTransformer:
+    # Import lazily to reduce startup memory footprint
+    from sentence_transformers import SentenceTransformer
     settings = Settings()
     return SentenceTransformer(settings.embedding_model)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
     model = get_embedder()
-    return model.encode(texts, normalize_embeddings=True).tolist()
+    vectors = model.encode(texts, normalize_embeddings=True)
+    if hasattr(vectors, "tolist"):
+        return vectors.tolist()
+    return [list(v) for v in vectors]
 
 
 def embed_query(text: str) -> list[float]:

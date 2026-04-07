@@ -7,9 +7,10 @@ Flow:
 from __future__ import annotations
 import logging
 from pathlib import Path
+import re
 from pydantic_settings import BaseSettings
 
-from api.services.embedder import embed_query
+from api.services.embedder import embed_query, Settings as EmbedSettings
 from core.query_router import classify_query, QueryCategory
 from core.prompt_builder import build_messages
 from core.reranker import rerank
@@ -18,9 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class RAGSettings(BaseSettings):
-    vectorstore_type: str = "chroma"
     chroma_persist_dir: str = "./data/vectorstore"
-    faiss_persist_dir: str = "./data/vectorstore_faiss"
     retrieval_k: int = 8
     rerank_top_n: int = 4
 
@@ -33,16 +32,7 @@ class RAGSettings(BaseSettings):
 
 def _load_vectorstore(settings: RAGSettings):
     from langchain_huggingface import HuggingFaceEmbeddings
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-    if settings.vectorstore_type.lower() == "faiss":
-        from langchain_community.vectorstores import FAISS
-        # FAISS index must already be built and saved locally
-        return FAISS.load_local(
-            settings.faiss_persist_dir,
-            embeddings,
-            allow_dangerous_deserialization=True,
-        )
+    embeddings = HuggingFaceEmbeddings(model_name=EmbedSettings().embedding_model)
 
     from langchain_community.vectorstores import Chroma
     return Chroma(
@@ -63,7 +53,8 @@ def retrieve(question: str, settings: RAGSettings | None = None) -> list[dict]:
         settings = RAGSettings()
 
     category = classify_query(question)
-    logger.info(f"Query category: {category}")
+    domain = _detect_domain(question)
+    logger.info(f"Query category: {category} | domain: {domain or 'unknown'}")
 
     try:
         vs = _load_vectorstore(settings)
@@ -72,8 +63,9 @@ def retrieve(question: str, settings: RAGSettings | None = None) -> list[dict]:
         return []
 
     search_kwargs: dict = {"k": settings.retrieval_k}
-    if category != QueryCategory.GENERAL:
-        search_kwargs["filter"] = {"category": category.value}
+    if domain:
+        # Ingest tags docs with domain="av" or "ev" (folder name)
+        search_kwargs["filter"] = {"domain": domain}
 
     try:
         docs = vs.similarity_search(question, **search_kwargs)
@@ -81,6 +73,7 @@ def retrieve(question: str, settings: RAGSettings | None = None) -> list[dict]:
         docs = []
 
     if not docs:
+        # Fallback to unfiltered search if filter was too strict or missing metadata.
         docs = vs.similarity_search(question, k=settings.retrieval_k)
 
     chunks = [
@@ -91,7 +84,57 @@ def retrieve(question: str, settings: RAGSettings | None = None) -> list[dict]:
         for doc in docs
     ]
 
+    chunks = _prioritize_sources_by_question(question, chunks)
     return rerank(question, chunks, top_n=settings.rerank_top_n)
+
+
+def _detect_domain(question: str) -> str | None:
+    q = question.lower()
+    av_keywords = [
+        "av", "autonomous", "ads", "adas", "sae j3016", "wp.29",
+        "nhtsa", "incident", "sgo", "od d", "operational design domain",
+        "automated driving", "self-driving",
+    ]
+    ev_keywords = [
+        "ev", "electric vehicle", "bev", "phev", "battery",
+        "charging", "ccs", "chademo", "nacs", "v2g", "v2h",
+        "battery regulation", "zev",
+    ]
+    av_hit = any(k in q for k in av_keywords)
+    ev_hit = any(k in q for k in ev_keywords)
+    if av_hit and not ev_hit:
+        return "av"
+    if ev_hit and not av_hit:
+        return "ev"
+    return None
+
+
+def _prioritize_sources_by_question(question: str, chunks: list[dict]) -> list[dict]:
+    """
+    If the question mentions a doc name or strong tokens (e.g., 'SAE', 'J3016'),
+    prioritize chunks whose source filename contains those tokens.
+    """
+    q = question.lower()
+    # Exact filename hint
+    m = re.search(r"([A-Za-z0-9_.-]+\\.pdf)", question)
+    if m:
+        fname = m.group(1).lower()
+        exact = [c for c in chunks if fname == str(c.get("source", "")).lower()]
+        return exact or chunks
+
+    # Token-based hint (prefer filenames containing key tokens)
+    tokens = [t.lower() for t in re.findall(r"[A-Za-z0-9_.-]+", question)]
+    tokens = [t for t in tokens if len(t) >= 4]
+    if not tokens:
+        return chunks
+
+    def score(c: dict) -> int:
+        src = str(c.get("source", "")).lower()
+        return sum(1 for t in tokens if t in src)
+
+    scored = sorted(chunks, key=score, reverse=True)
+    # If top has zero score, no meaningful match
+    return scored if score(scored[0]) > 0 else chunks
 
 
 # ── Full RAG chain ─────────────────────────────────────────────────

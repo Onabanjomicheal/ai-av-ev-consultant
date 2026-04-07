@@ -12,12 +12,12 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+from api.services.embedder import Settings as EmbedSettings
 
 load_dotenv()
 
 DOC_DIR     = Path("data/raw_docs")
 CHROMA_DIR = Path("data/vectorstore")
-FAISS_DIR  = Path("data/vectorstore_faiss")
 CHUNK_SIZE  = 512
 OVERLAP     = 64
 
@@ -25,9 +25,7 @@ LOADERS = {".pdf": PyPDFLoader, ".html": UnstructuredHTMLLoader, ".csv": CSVLoad
 
 
 class IngestSettings(BaseSettings):
-    vectorstore_type: str = "chroma"
     chroma_persist_dir: str = str(CHROMA_DIR)
-    faiss_persist_dir: str = str(FAISS_DIR)
 
     class Config:
         env_file = ".env"
@@ -52,6 +50,7 @@ def main():
                 for doc in loaded:
                     doc.metadata["source"] = fname
                     doc.metadata["category"] = category
+                    doc.metadata["domain"] = category
                 docs.extend(loaded)
                 files_ok += 1
                 print(f"  [ok] {fpath}")
@@ -67,25 +66,18 @@ def main():
     print(f"[ingest] {files_ok} files → {len(chunks)} chunks")
 
     print("[ingest] Loading embedding model (first run downloads ~90 MB)...")
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name=EmbedSettings().embedding_model)
 
     settings = IngestSettings()
-    print(f"[ingest] Building vector store ({settings.vectorstore_type})...")
-
-    if settings.vectorstore_type.lower() == "faiss":
-        from langchain_community.vectorstores import FAISS
-        vs = FAISS.from_documents(chunks, embeddings)
-        vs.save_local(settings.faiss_persist_dir)
-        print(f"[ingest] Done. Vector store saved to {settings.faiss_persist_dir}")
-    else:
-        from langchain_community.vectorstores import Chroma
-        Chroma.from_documents(
-            chunks,
-            embeddings,
-            collection_name="langchain",
-            persist_directory=settings.chroma_persist_dir,
-        )
-        print(f"[ingest] Done. Vector store saved to {settings.chroma_persist_dir}")
+    print("[ingest] Building vector store (chroma)...")
+    from langchain_community.vectorstores import Chroma
+    Chroma.from_documents(
+        chunks,
+        embeddings,
+        collection_name="langchain",
+        persist_directory=settings.chroma_persist_dir,
+    )
+    print(f"[ingest] Done. Vector store saved to {settings.chroma_persist_dir}")
 
 
 if __name__ == "__main__":

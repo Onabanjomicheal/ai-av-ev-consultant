@@ -7,8 +7,8 @@ AI-powered consultant for Autonomous Vehicle and Electric Vehicle practitioners 
 |---|---|
 | Frontend | Streamlit + Plotly |
 | Backend | FastAPI + Uvicorn |
-| LLM | Ollama (local) / Claude API |
-| RAG | LangChain + ChromaDB + FAISS |
+| LLM | Groq API / Ollama (local) / Claude API |
+| RAG | LangChain + ChromaDB |
 | Embeddings | HuggingFace all-MiniLM-L6-v2 |
 | Memory | Upstash Redis |
 | Database | Supabase (PostgreSQL) |
@@ -22,6 +22,10 @@ make install
 
 # 2. Configure
 cp .env.example .env   # fill in your keys
+
+# If responses feel slow, prefer Groq:
+# LLM_PROVIDER=groq
+# LLM_MODEL=llama-3.1-8b-instant
 
 # 3. Add AV/EV documents to data/raw_docs/av/ and data/raw_docs/ev/
 # 4. Ingest

@@ -1,28 +1,37 @@
 import os
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
-from langchain_community.document_loaders import (
-    PyPDFLoader,
-    UnstructuredHTMLLoader,
-    CSVLoader,
-)
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from api.schemas.documents import IngestRequest, IngestResponse
 from api.services.rag import RAGSettings
+from api.services.embedder import Settings as EmbedSettings
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
-
-LOADERS = {
-    ".pdf":  PyPDFLoader,
-    ".html": UnstructuredHTMLLoader,
-    ".csv":  CSVLoader,
-}
 
 
 @router.post("", response_model=IngestResponse)
 async def ingest_documents(req: IngestRequest):
+    try:
+        from langchain_community.document_loaders import (
+            PyPDFLoader,
+            UnstructuredHTMLLoader,
+            CSVLoader,
+        )
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        from langchain_huggingface import HuggingFaceEmbeddings
+        from langchain_community.vectorstores import Chroma
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ingestion dependencies missing: {e}. Install requirements.txt.",
+        )
+
+    loaders = {
+        ".pdf":  PyPDFLoader,
+        ".html": UnstructuredHTMLLoader,
+        ".csv":  CSVLoader,
+    }
+
     doc_dir = Path(req.directory)
     if not doc_dir.exists():
         raise HTTPException(status_code=404, detail=f"Directory not found: {req.directory}")
@@ -34,16 +43,17 @@ async def ingest_documents(req: IngestRequest):
         for fname in files:
             fpath = Path(root) / fname
             suffix = fpath.suffix.lower()
-            if suffix not in LOADERS:
+            if suffix not in loaders:
                 continue
             try:
-                loader = LOADERS[suffix](str(fpath))
+                loader = loaders[suffix](str(fpath))
                 loaded = loader.load()
                 # Tag with category from parent folder name
                 category = Path(root).name  # "av" or "ev"
                 for doc in loaded:
                     doc.metadata["source"] = fname
                     doc.metadata["category"] = category
+                    doc.metadata["domain"] = category
                 docs.extend(loaded)
                 files_processed += 1
             except Exception as e:
@@ -58,20 +68,14 @@ async def ingest_documents(req: IngestRequest):
     )
     chunks = splitter.split_documents(docs)
 
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name=EmbedSettings().embedding_model)
     settings = RAGSettings()
-    if settings.vectorstore_type.lower() == "faiss":
-        from langchain_community.vectorstores import FAISS
-        vs = FAISS.from_documents(chunks, embeddings)
-        vs.save_local(settings.faiss_persist_dir)
-    else:
-        from langchain_community.vectorstores import Chroma
-        Chroma.from_documents(
-            chunks,
-            embeddings,
-            collection_name="langchain",
-            persist_directory=settings.chroma_persist_dir,
-        )
+    Chroma.from_documents(
+        chunks,
+        embeddings,
+        collection_name="langchain",
+        persist_directory=settings.chroma_persist_dir,
+    )
 
     return IngestResponse(
         status="success",

@@ -1,7 +1,13 @@
 import time
 import uuid
-from loguru import logger
 from fastapi import Request
+
+try:
+    from loguru import logger
+except Exception:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("av_ev_consultant")
 
 
 async def log_requests(request: Request, call_next):

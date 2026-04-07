@@ -5,7 +5,6 @@ For a portfolio project this is intentionally lightweight.
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
@@ -29,7 +28,19 @@ class TokenRequest(BaseModel):
     password: str
 
 
+def _get_jwt():
+    try:
+        from jose import JWTError, jwt
+        return JWTError, jwt
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Auth dependencies missing: {e}. Install requirements.txt.",
+        )
+
+
 def create_token(data: dict) -> str:
+    JWTError, jwt = _get_jwt()
     s = AuthSettings()
     if not s.secret_key and s.env.lower() != "dev":
         raise HTTPException(status_code=500, detail="Auth misconfigured: SECRET_KEY missing")
@@ -40,6 +51,7 @@ def create_token(data: dict) -> str:
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    JWTError, jwt = _get_jwt()
     s = AuthSettings()
     if not s.secret_key and s.env.lower() != "dev":
         raise HTTPException(status_code=500, detail="Auth misconfigured: SECRET_KEY missing")
