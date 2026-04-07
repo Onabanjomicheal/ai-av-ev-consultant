@@ -50,6 +50,7 @@ def build_messages(
 
     mode_note = _mode_instructions(question)
     feature_note = _feature_instructions(question)
+    allowed_entities = _extract_allowed_entities(context_chunks)
     spec_table = ""
     if _is_spec_mode(question):
         spec_table = build_spec_table(question, context_chunks)
@@ -58,6 +59,7 @@ def build_messages(
         f"{SYSTEM_PROMPT}\n\n"
         f"{mode_note}\n"
         f"{feature_note}\n"
+        f"ALLOWED ENTITIES (verbatim only): {', '.join(allowed_entities) if allowed_entities else 'None found'}\n"
         f"---\nRELEVANT DOCUMENT CONTEXT:\n{context_block}\n---"
     )
     if spec_table:
@@ -135,3 +137,27 @@ def _feature_instructions(question: str) -> str:
 def _is_spec_mode(question: str) -> bool:
     q = question.lower()
     return any(k in q for k in ["compare", "comparison", "vs", "versus", "side by side", "spec"])
+
+
+def _extract_allowed_entities(chunks: list[dict]) -> list[str]:
+    """
+    Extract candidate entity tokens from retrieved context.
+    This is a hard allowlist to reduce hallucinated names.
+    """
+    import re
+    text = " ".join([str(c.get("content", "")) for c in chunks])
+    # Acronyms (e.g., CCS, NACS, CHAdeMO, ISO, SAE)
+    acronyms = re.findall(r"\b[A-Z][A-Z0-9/\-]{1,9}\b", text)
+    # TitleCase phrases (e.g., North American Charging Standard)
+    phrases = re.findall(r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,4})\b", text)
+    candidates = acronyms + phrases
+    # Deduplicate while preserving order
+    seen = set()
+    out = []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+        if len(out) >= 50:
+            break
+    return out
